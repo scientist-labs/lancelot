@@ -8,6 +8,7 @@ RSpec.describe Lancelot::Dataset do
   let(:dataset_path) { File.join(temp_dir, "test_dataset") }
 
   after do
+    GC.start
     FileUtils.rm_rf(temp_dir)
   end
 
