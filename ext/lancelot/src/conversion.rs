@@ -1,10 +1,11 @@
-use magnus::{Error, Ruby, RHash, RArray, Symbol, Value, TryConvert, value::ReprValue};
+use magnus::{Error, Ruby, RHash, RArray, Value, TryConvert, value::ReprValue};
 use arrow_schema::{DataType, Schema as ArrowSchema};
 use arrow_array::{RecordBatch, StringArray, Float32Array, ArrayRef, Array, FixedSizeListArray};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub fn build_record_batch(
+    ruby: &Ruby,
     data: RArray,
     schema: &ArrowSchema,
 ) -> Result<RecordBatch, Error> {
@@ -13,7 +14,7 @@ pub fn build_record_batch(
     let mut int_columns: HashMap<String, Vec<Option<i64>>> = HashMap::new();
     let mut bool_columns: HashMap<String, Vec<Option<bool>>> = HashMap::new();
     let mut vector_columns: HashMap<String, Vec<Option<Vec<f32>>>> = HashMap::new();
-    
+
     for field in schema.fields() {
         match field.data_type() {
             DataType::Utf8 => {
@@ -35,18 +36,20 @@ pub fn build_record_batch(
         }
     }
 
-    for item in data.into_iter() {
-        let item = RHash::try_convert(item)?;
+    // Index-based iteration over data RArray
+    for idx in 0..data.len() {
+        let item_value: Value = data.entry(idx as isize)?;
+        let item = RHash::try_convert(item_value)?;
         for field in schema.fields() {
-            let key = Symbol::new(field.name());
+            let key = ruby.to_symbol(field.name());
             // Make fields optional - use get instead of fetch
             let value: Value = item.get(key)
                 .or_else(|| {
-                    // Try with string key  
+                    // Try with string key
                     item.get(field.name().as_str())
                 })
-                .unwrap_or_else(|| Ruby::get().unwrap().qnil().as_value());
-            
+                .unwrap_or_else(|| ruby.qnil().as_value());
+
             match field.data_type() {
                 DataType::Utf8 => {
                     if value.is_nil() {
@@ -85,9 +88,12 @@ pub fn build_record_batch(
                         vector_columns.get_mut(field.name()).unwrap().push(None);
                     } else {
                         let arr = RArray::try_convert(value)?;
-                        let vec: Vec<f32> = arr.into_iter()
-                            .map(|v| f64::try_convert(v).map(|f| f as f32))
-                            .collect::<Result<Vec<_>, _>>()?;
+                        let len = arr.len();
+                        let mut vec: Vec<f32> = Vec::with_capacity(len);
+                        for j in 0..len {
+                            let v: f64 = arr.entry(j as isize)?;
+                            vec.push(v as f32);
+                        }
                         vector_columns.get_mut(field.name()).unwrap().push(Some(vec));
                     }
                 }
@@ -97,7 +103,7 @@ pub fn build_record_batch(
     }
 
     let mut arrays: Vec<ArrayRef> = Vec::new();
-    
+
     for field in schema.fields() {
         let array: ArrayRef = match field.data_type() {
             DataType::Utf8 => {
@@ -125,7 +131,7 @@ pub fn build_record_batch(
                         Some(vec) => {
                             if vec.len() != *list_size as usize {
                                 return Err(Error::new(
-                                    magnus::exception::arg_error(),
+                                    ruby.exception_arg_error(),
                                     format!("Vector dimension mismatch. Expected {}, got {}", list_size, vec.len())
                                 ));
                             }
@@ -137,7 +143,7 @@ pub fn build_record_batch(
                         }
                     }
                 }
-                
+
                 let flat_array = Float32Array::from(flat_values);
                 Arc::new(FixedSizeListArray::new(
                     inner_field.clone(),
@@ -147,46 +153,45 @@ pub fn build_record_batch(
                 ))
             }
             _ => return Err(Error::new(
-                magnus::exception::runtime_error(),
+                ruby.exception_runtime_error(),
                 format!("Unsupported data type: {:?}", field.data_type())
             ))
         };
-        
+
         arrays.push(array);
     }
 
     RecordBatch::try_new(Arc::new(schema.clone()), arrays)
-        .map_err(|e| Error::new(magnus::exception::runtime_error(), e.to_string()))
+        .map_err(|e| Error::new(ruby.exception_runtime_error(), e.to_string()))
 }
 
-pub fn convert_batch_to_ruby(batch: &RecordBatch) -> Result<RArray, Error> {
-    let ruby = Ruby::get().unwrap();
+pub fn convert_batch_to_ruby(ruby: &Ruby, batch: &RecordBatch) -> Result<RArray, Error> {
     let documents = ruby.ary_new();
-    
+
     let num_rows = batch.num_rows();
     let schema = batch.schema();
-    
+
     for row_idx in 0..num_rows {
         let doc = ruby.hash_new();
-        
+
         for (col_idx, field) in schema.fields().iter().enumerate() {
             let column = batch.column(col_idx);
-            let key = Symbol::new(field.name());
-            
+            let key = ruby.to_symbol(field.name());
+
             // CRITICAL: Add bounds checking for all array access
             if row_idx >= column.len() {
                 return Err(Error::new(
-                    magnus::exception::runtime_error(), 
-                    format!("Row index {} out of bounds for column '{}' with length {}", 
+                    ruby.exception_runtime_error(),
+                    format!("Row index {} out of bounds for column '{}' with length {}",
                             row_idx, field.name(), column.len())
                 ));
             }
-            
+
             match field.data_type() {
                 DataType::Utf8 => {
                     let array = column.as_any().downcast_ref::<StringArray>()
-                        .ok_or_else(|| Error::new(magnus::exception::runtime_error(), "Failed to cast to StringArray"))?;
-                    
+                        .ok_or_else(|| Error::new(ruby.exception_runtime_error(), "Failed to cast to StringArray"))?;
+
                     if array.is_null(row_idx) {
                         doc.aset(key, ruby.qnil())?;
                     } else {
@@ -195,8 +200,8 @@ pub fn convert_batch_to_ruby(batch: &RecordBatch) -> Result<RArray, Error> {
                 }
                 DataType::Float32 => {
                     let array = column.as_any().downcast_ref::<Float32Array>()
-                        .ok_or_else(|| Error::new(magnus::exception::runtime_error(), "Failed to cast to Float32Array"))?;
-                    
+                        .ok_or_else(|| Error::new(ruby.exception_runtime_error(), "Failed to cast to Float32Array"))?;
+
                     if array.is_null(row_idx) {
                         doc.aset(key, ruby.qnil())?;
                     } else {
@@ -205,8 +210,8 @@ pub fn convert_batch_to_ruby(batch: &RecordBatch) -> Result<RArray, Error> {
                 }
                 DataType::Int64 => {
                     let array = column.as_any().downcast_ref::<arrow_array::Int64Array>()
-                        .ok_or_else(|| Error::new(magnus::exception::runtime_error(), "Failed to cast to Int64Array"))?;
-                    
+                        .ok_or_else(|| Error::new(ruby.exception_runtime_error(), "Failed to cast to Int64Array"))?;
+
                     if array.is_null(row_idx) {
                         doc.aset(key, ruby.qnil())?;
                     } else {
@@ -215,8 +220,8 @@ pub fn convert_batch_to_ruby(batch: &RecordBatch) -> Result<RArray, Error> {
                 }
                 DataType::Boolean => {
                     let array = column.as_any().downcast_ref::<arrow_array::BooleanArray>()
-                        .ok_or_else(|| Error::new(magnus::exception::runtime_error(), "Failed to cast to BooleanArray"))?;
-                    
+                        .ok_or_else(|| Error::new(ruby.exception_runtime_error(), "Failed to cast to BooleanArray"))?;
+
                     if array.is_null(row_idx) {
                         doc.aset(key, ruby.qnil())?;
                     } else {
@@ -225,25 +230,25 @@ pub fn convert_batch_to_ruby(batch: &RecordBatch) -> Result<RArray, Error> {
                 }
                 DataType::FixedSizeList(_, list_size) => {
                     let array = column.as_any().downcast_ref::<FixedSizeListArray>()
-                        .ok_or_else(|| Error::new(magnus::exception::runtime_error(), "Failed to cast to FixedSizeListArray"))?;
-                    
+                        .ok_or_else(|| Error::new(ruby.exception_runtime_error(), "Failed to cast to FixedSizeListArray"))?;
+
                     if array.is_null(row_idx) {
                         doc.aset(key, ruby.qnil())?;
                     } else {
                         let values = array.value(row_idx);
                         let float_array = values.as_any().downcast_ref::<Float32Array>()
-                            .ok_or_else(|| Error::new(magnus::exception::runtime_error(), "Failed to cast vector values to Float32Array"))?;
-                        
+                            .ok_or_else(|| Error::new(ruby.exception_runtime_error(), "Failed to cast vector values to Float32Array"))?;
+
                         // CRITICAL: Verify the float_array has the expected size
                         let expected_size = *list_size as usize;
                         if float_array.len() != expected_size {
                             return Err(Error::new(
-                                magnus::exception::runtime_error(),
+                                ruby.exception_runtime_error(),
                                 format!("Vector data corruption: expected {} elements but found {} for field '{}'",
                                         expected_size, float_array.len(), field.name())
                             ));
                         }
-                        
+
                         let ruby_array = ruby.ary_new();
                         for i in 0..expected_size {
                             ruby_array.push(float_array.value(i))?;
@@ -256,9 +261,9 @@ pub fn convert_batch_to_ruby(batch: &RecordBatch) -> Result<RArray, Error> {
                 }
             }
         }
-        
+
         documents.push(doc)?;
     }
-    
+
     Ok(documents)
 }
