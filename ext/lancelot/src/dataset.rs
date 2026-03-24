@@ -280,6 +280,7 @@ impl LancelotDataset {
                 true
             )
             .await
+            .map(|_| ())
             .map_err(|e| Error::new(ruby.exception_runtime_error(), e.to_string()))
         })
     }
@@ -347,6 +348,7 @@ impl LancelotDataset {
                 true
             )
             .await
+            .map(|_| ())
             .map_err(|e| Error::new(ruby.exception_runtime_error(), e.to_string()))
         })
     }

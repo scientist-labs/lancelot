@@ -8,14 +8,14 @@ crate-type = ["cdylib"]
 
 [dependencies]
 magnus = { version = "0.8", features = ["rb-sys"] }
-lance = { version = "0.31", default-features = false }
-lance-index = "0.31"
-lance-linalg = "0.31"
+lance = { version = "3.0", default-features = false }
+lance-index = "3.0"
+lance-linalg = "3.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-arrow = "55"
-arrow-array = "55"
-arrow-schema = "55"
-arrow-data = "55"
+arrow = "57"
+arrow-array = "57"
+arrow-schema = "57"
+arrow-data = "57"
 futures = "0.3"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
