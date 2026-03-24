@@ -3259,9 +3259,9 @@ dependencies = [
 
 [[package]]
 name = "magnus"
-version = "0.7.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d87ae53030f3a22e83879e666cb94e58a7bdf31706878a0ba48752994146dab"
+checksum = "3b36a5b126bbe97eb0d02d07acfeb327036c6319fd816139a49824a83b7f9012"
 dependencies = [
  "magnus-macros",
  "rb-sys",
@@ -3271,9 +3271,9 @@ dependencies = [
 
 [[package]]
 name = "magnus-macros"
-version = "0.6.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5968c820e2960565f647819f5928a42d6e874551cab9d88d75e3e0660d7f71e3"
+checksum = "47607461fd8e1513cb4f2076c197d8092d921a1ea75bd08af97398f593751892"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3797,7 +3797,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "once_cell",
@@ -3817,7 +3817,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.104",
@@ -4047,18 +4047,18 @@ dependencies = [
 
 [[package]]
 name = "rb-sys"
-version = "0.9.116"
+version = "0.9.124"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7059846f68396df83155779c75336ca24567741cb95256e6308c9fcc370e8dad"
+checksum = "c85c4188462601e2aa1469def389c17228566f82ea72f137ed096f21591bc489"
 dependencies = [
  "rb-sys-build",
 ]
 
 [[package]]
 name = "rb-sys-build"
-version = "0.9.116"
+version = "0.9.124"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac217510df41b9ffc041573e68d7a02aaff770c49943c7494441c4b224b0ecd0"
+checksum = "568068db4102230882e6d4ae8de6632e224ca75fe5970f6e026a04e91ed635d3"
 dependencies = [
  "bindgen",
  "lazy_static",
@@ -4071,9 +4071,9 @@ dependencies = [
 
 [[package]]
 name = "rb-sys-env"
-version = "0.1.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a35802679f07360454b418a5d1735c89716bde01d35b1560fc953c1415a0b3bb"
+checksum = "cca7ad6a7e21e72151d56fe2495a259b5670e204c3adac41ee7ef676ea08117a"
 
 [[package]]
 name = "recursive"

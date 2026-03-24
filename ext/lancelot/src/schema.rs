@@ -1,28 +1,26 @@
-use magnus::{Error, RHash, Symbol, Value, TryConvert, r_hash::ForEach, value::ReprValue};
+use magnus::{Error, Ruby, RHash, Symbol, Value, TryConvert, r_hash::ForEach};
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use std::sync::Arc;
 
-pub fn build_arrow_schema(schema_hash: RHash) -> Result<ArrowSchema, Error> {
+pub fn build_arrow_schema(ruby: &Ruby, schema_hash: RHash) -> Result<ArrowSchema, Error> {
     let mut fields = Vec::new();
 
     schema_hash.foreach(|key: Symbol, value: Value| {
         let field_name = key.name()?.to_string();
-        
-        let data_type = if value.is_kind_of(magnus::class::hash()) {
-            let hash = RHash::from_value(value)
-                .ok_or_else(|| Error::new(magnus::exception::arg_error(), "Invalid hash value"))?;
-            let type_str: String = hash.fetch(Symbol::new("type"))?;
-            
+
+        let data_type = if let Some(hash) = RHash::from_value(value) {
+            let type_str: String = hash.fetch(ruby.to_symbol("type"))?;
+
             match type_str.as_str() {
                 "vector" => {
-                    let dimension: i32 = hash.fetch(Symbol::new("dimension"))?;
+                    let dimension: i32 = hash.fetch(ruby.to_symbol("dimension"))?;
                     DataType::FixedSizeList(
                         Arc::new(Field::new("item", DataType::Float32, true)),
                         dimension,
                     )
                 }
                 _ => return Err(Error::new(
-                    magnus::exception::arg_error(),
+                    ruby.exception_arg_error(),
                     format!("Unknown field type: {}", type_str)
                 ))
             }
@@ -36,7 +34,7 @@ pub fn build_arrow_schema(schema_hash: RHash) -> Result<ArrowSchema, Error> {
                 "int64" => DataType::Int64,
                 "boolean" => DataType::Boolean,
                 _ => return Err(Error::new(
-                    magnus::exception::arg_error(),
+                    ruby.exception_arg_error(),
                     format!("Unknown field type: {}", type_str)
                 ))
             }
