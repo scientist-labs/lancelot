@@ -51,19 +51,24 @@ jobs:
     # Tags + manual dispatch always run; PRs run ONLY when explicitly labelled
     # `dry-run-release` (the precompiled matrix is expensive — opt in per PR).
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'dry-run-release') }}
-    uses: scientist-labs/rust-gem-release/.github/workflows/release.yml@v0
+    uses: scientist-labs/rust-gem-release/.github/workflows/release.yml@0.9.0
     with:
       gem-name: lancelot
       version-command: ruby -r./lib/lancelot/version -e 'print Lancelot::VERSION'
       # ext-name (lancelot), gemspec (lancelot.gemspec) and platform-gem-env
       # (RUST_GEM_PLATFORM) all resolve to the workflow defaults, so omitted.
       # protoc is required by the `lance` crate's prost-build. On darwin install it
-      # via Homebrew; on the linux legs it ships inside the pre-seeded cross image.
+      # via Homebrew.
       darwin-pre-build-command: brew install protobuf
-      # protoc for lance's prost-build, apt-installed into the cross image inline
-      # (FROM rbsys/<platform>:0.9.128). protoc is a host build-tool so it serves both
-      # linux legs. linux-rbsys-tag defaults to 0.9.128 (== Cargo.lock's rb-sys pin).
-      linux-extra-apt: protobuf-compiler
+      # On the linux legs, focal's apt protoc (3.6) is too old for lance-encoding's
+      # protos (`Unknown flag: --experimental_allow_proto3_optional`, needs >=3.12).
+      # Download a modern protoc binary into the inline cross image instead. protoc
+      # is a host build-tool (x86_64), so one binary serves both target legs.
+      linux-image-setup: >-
+        (command -v unzip >/dev/null || (apt-get update && apt-get install -y --no-install-recommends unzip)) &&
+        curl -fsSL https://github.com/protocolbuffers/protobuf/releases/download/v28.3/protoc-28.3-linux-x86_64.zip -o /tmp/protoc.zip &&
+        unzip -o /tmp/protoc.zip -d /usr/local bin/protoc 'include/*' &&
+        chmod +x /usr/local/bin/protoc && /usr/local/bin/protoc --version
       build-x86_64-linux: true
       build-aarch64-linux: true
       # Publish only on a tag push, or a manual dispatch that explicitly opts in.
