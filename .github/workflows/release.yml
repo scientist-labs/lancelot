@@ -60,10 +60,10 @@ jobs:
       # protoc is required by the `lance` crate's prost-build. On darwin install it
       # via Homebrew; on the linux legs it ships inside the pre-seeded cross image.
       darwin-pre-build-command: brew install protobuf
-      # Pre-seed the deps-enriched rb-sys cross image so the linux legs have protoc.
-      # The :tag defaults to 0.9.128, matching ext/lancelot/Cargo.lock's rb-sys pin.
-      linux-cross-image-repo: ghcr.io/scientist-labs/rust-gem-cross
-      linux-cross-image-tag: "0.9.128"
+      # protoc for lance's prost-build, apt-installed into the cross image inline
+      # (FROM rbsys/<platform>:0.9.128). protoc is a host build-tool so it serves both
+      # linux legs. linux-rbsys-tag defaults to 0.9.128 (== Cargo.lock's rb-sys pin).
+      linux-extra-apt: protobuf-compiler
       build-x86_64-linux: true
       build-aarch64-linux: true
       # Publish only on a tag push, or a manual dispatch that explicitly opts in.
