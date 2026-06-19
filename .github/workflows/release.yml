@@ -1,68 +1,78 @@
 name: Release
 
+# Adopts the shared reusable workflow scientist-labs/rust-gem-release@0.10.0 (pinned to
+# an explicit release). Replaces the old hand-rolled single-job release that built only
+# the source gem on ubuntu-latest.
+#
+# A pushed version tag (or a manual run with publish=true) builds:
+#   - the source "ruby" gem            (universal fallthrough; compiles Rust on install)
+#   - lancelot-<v>-arm64-darwin.gem    (precompiled, built natively on Apple Silicon)
+#   - lancelot-<v>-x86_64-linux.gem    (precompiled, glibc)
+#   - lancelot-<v>-aarch64-linux.gem   (precompiled, glibc; cross-compiled on x86_64)
+# and creates/attaches a GitHub Release.
+#
+# LINUX PRECOMPILED LEGS: lancelot's extension pulls the `lance` crate -> prost-build,
+# which shells out to a system `protoc` at cargo-build time. The stock rb-sys-dock
+# cross image has no protoc, and cross-gem@v1.4.4 has no in-container apt hook. We
+# therefore pre-seed the runner's Docker daemon with a deps-enriched cross image
+# (ghcr.io/scientist-labs/rust-gem-cross, built FROM rbsys/<platform>:0.9.128 + apt
+# protobuf-compiler & friends) via the linux-cross-image-repo input: the reusable
+# workflow runs `docker pull <repo>:<platform>` then `docker tag` it to the exact
+# name rb-sys-dock expects (rbsys/<platform>:0.9.128), so rb-sys-dock finds it locally
+# and builds against OUR image. prost-build then auto-discovers /usr/bin/protoc on
+# PATH — no cargo-config / PROTOC env needed. ext/lancelot/Cargo.lock is pinned to
+# rb-sys 0.9.128 so the :0.9.128 tag the pre-seed uses is the one rb-sys-dock derives.
+
 on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+.*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+.*"
   workflow_dispatch:
     inputs:
-      version:
-        description: "Version to release (e.g. 1.0.0)"
-        required: true
-        type: string
+      publish:
+        type: boolean
+        default: false
+        description: "push to RubyGems (default off = dry-run)"
+  # Full-matrix DRY-RUN on demand: add the `dry-run-release` label to a PR to build
+  # every precompiled leg (publish stays off) without cutting a tag. A reusable
+  # workflow is branch-only, so workflow_dispatch cannot reach it pre-merge — a
+  # labeled PR is how we validate the release pipeline before merging.
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: write
 
 jobs:
   release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Install protobuf compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "4.0"
-          bundler-cache: true
-
-      - name: Update version
-        run: |
-          VERSION="${{ inputs.version }}"
-          sed -i "s/VERSION = \".*\"/VERSION = \"$VERSION\"/" lib/lancelot/version.rb
-          echo "Updated version to $VERSION"
-          cat lib/lancelot/version.rb
-
-      - name: Commit and tag
-        run: |
-          VERSION="${{ inputs.version }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add lib/lancelot/version.rb
-          git commit -m "Release v$VERSION"
-          git tag "$VERSION"
-          git push origin HEAD:${{ github.ref_name }} --tags
-
-      - name: Build gem
-        run: gem build lancelot.gemspec
-
-      - name: Push to RubyGems
-        run: |
-          mkdir -p ~/.gem
-          echo "---" > ~/.gem/credentials
-          echo ":rubygems_api_key: ${{ secrets.RUBYGEMS_API_KEY }}" >> ~/.gem/credentials
-          chmod 0600 ~/.gem/credentials
-          gem push lancelot-*.gem
-
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          VERSION="${{ inputs.version }}"
-          gh release create "$VERSION" \
-            --title "v$VERSION" \
-            --generate-notes \
-            lancelot-*.gem
+    # Tags + manual dispatch always run; PRs run ONLY when explicitly labelled
+    # `dry-run-release` (the precompiled matrix is expensive — opt in per PR).
+    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'dry-run-release') }}
+    uses: scientist-labs/rust-gem-release/.github/workflows/release.yml@0.10.0
+    with:
+      gem-name: lancelot
+      version-command: ruby -r./lib/lancelot/version -e 'print Lancelot::VERSION'
+      # ext-name (lancelot), gemspec (lancelot.gemspec) and platform-gem-env
+      # (RUST_GEM_PLATFORM) all resolve to the workflow defaults, so omitted.
+      # protoc is required by the `lance` crate's prost-build. On darwin install it
+      # via Homebrew.
+      darwin-pre-build-command: brew install protobuf
+      # On the linux legs, focal's apt protoc (3.6) is too old for lance-encoding's
+      # protos (`Unknown flag: --experimental_allow_proto3_optional`, needs >=3.12).
+      # Download a modern protoc binary into the inline cross image instead. protoc
+      # is a host build-tool (x86_64), so one binary serves both target legs.
+      linux-image-setup: >-
+        (command -v unzip >/dev/null || (apt-get update && apt-get install -y --no-install-recommends unzip)) &&
+        curl -fsSL https://github.com/protocolbuffers/protobuf/releases/download/v28.3/protoc-28.3-linux-x86_64.zip -o /tmp/protoc.zip &&
+        unzip -o /tmp/protoc.zip -d /usr/local bin/protoc 'include/*' &&
+        chmod +x /usr/local/bin/protoc && /usr/local/bin/protoc --version
+      build-x86_64-linux: true
+      build-aarch64-linux: true
+      # Publish only on a tag push, or a manual dispatch that explicitly opts in.
+      # Every PR (dry-run-release matrix) stays publish=false.
+      publish: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+    secrets:
+      rubygems-api-key: ${{ secrets.RUBYGEMS_API_KEY }}

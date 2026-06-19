@@ -30,7 +30,20 @@ Gem::Specification.new do |spec|
   spec.bindir = "exe"
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
-  spec.extensions = ["ext/lancelot/extconf.rb"]
+
+  # Precompiled platform gems (e.g. arm64-darwin, built natively on a macOS runner)
+  # carry one compiled extension per Ruby ABI under lib/lancelot/<major.minor>/ and must
+  # NOT declare extensions, or RubyGems would try to recompile from Rust source on
+  # install -- defeating the precompiled gem. The *.bundle/*.so are gitignored, so the
+  # `git ls-files` spec.files block above omits them; the Dir[] glob re-adds the per-ABI
+  # bundles into the fat gem. Unset => normal source gem (compiles via extconf.rb).
+  if (platform_gem = ENV["RUST_GEM_PLATFORM"])
+    spec.platform = platform_gem
+    spec.extensions = []
+    spec.files += Dir["lib/lancelot/*/lancelot.bundle"] + Dir["lib/lancelot/*/lancelot.so"]
+  else
+    spec.extensions = ["ext/lancelot/extconf.rb"]
+  end
 
   # Runtime dependencies
   spec.add_dependency "rb_sys", "~> 0.9"
