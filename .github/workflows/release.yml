@@ -13,15 +13,14 @@ name: Release
 #
 # LINUX PRECOMPILED LEGS: lancelot's extension pulls the `lance` crate -> prost-build,
 # which shells out to a system `protoc` at cargo-build time. The stock rb-sys-dock
-# cross image has no protoc, and cross-gem@v1.4.4 has no in-container apt hook. We
-# therefore pre-seed the runner's Docker daemon with a deps-enriched cross image
-# (ghcr.io/scientist-labs/rust-gem-cross, built FROM rbsys/<platform>:0.9.128 + apt
-# protobuf-compiler & friends) via the linux-cross-image-repo input: the reusable
-# workflow runs `docker pull <repo>:<platform>` then `docker tag` it to the exact
-# name rb-sys-dock expects (rbsys/<platform>:0.9.128), so rb-sys-dock finds it locally
-# and builds against OUR image. prost-build then auto-discovers /usr/bin/protoc on
-# PATH — no cargo-config / PROTOC env needed. ext/lancelot/Cargo.lock is pinned to
-# rb-sys 0.9.128 so the :0.9.128 tag the pre-seed uses is the one rb-sys-dock derives.
+# cross image has no protoc. We supply it via the reusable workflow's
+# `linux-image-setup` input (see below): the workflow builds an inline cross image
+# `FROM rbsys/<platform>:<tag>` and runs our setup script inside it, then rb-sys-dock
+# cross-compiles against THAT enriched image — no separately published/pre-seeded
+# image is involved. The setup script downloads a modern protoc binary onto PATH, so
+# prost-build auto-discovers /usr/bin/protoc with no cargo-config / PROTOC env needed.
+# ext/lancelot/Cargo.lock pins rb-sys, which fixes the rbsys/<platform>:<tag> base the
+# inline image is built FROM.
 
 on:
   push:
