@@ -7,8 +7,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-magnus = { version = "0.8", features = ["embed"] }
-lance = { version = "3.0", default-features = false }
+magnus = "0.8"lance = { version = "3.0", default-features = false }
 lance-index = "3.0"
 lance-linalg = "3.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
