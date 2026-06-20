@@ -1,6 +1,6 @@
 name: Release
 
-# Adopts the shared reusable workflow scientist-labs/rust-gem-release@0.10.0 (pinned to
+# Adopts the shared reusable workflow scientist-labs/rust-gem-release@0.11.0 (pinned to
 # an explicit release). Replaces the old hand-rolled single-job release that built only
 # the source gem on ubuntu-latest.
 #
@@ -31,6 +31,10 @@ on:
       - "v[0-9]+.[0-9]+.[0-9]+.*"
   workflow_dispatch:
     inputs:
+      version:
+        type: string
+        default: ""
+        description: "Version to cut + release, e.g. 1.0.0 (blank = build-only dry-run)"
       publish:
         type: boolean
         default: false
@@ -50,10 +54,13 @@ jobs:
     # Tags + manual dispatch always run; PRs run ONLY when explicitly labelled
     # `dry-run-release` (the precompiled matrix is expensive — opt in per PR).
     if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'dry-run-release') }}
-    uses: scientist-labs/rust-gem-release/.github/workflows/release.yml@0.10.0
+    uses: scientist-labs/rust-gem-release/.github/workflows/release.yml@0.11.0
     with:
       gem-name: lancelot
       version-command: ruby -r./lib/lancelot/version -e 'print Lancelot::VERSION'
+      version: ${{ inputs.version }}
+      bump-command: |
+        sed -i 's/^\( *VERSION *= *\).*/\1"'"$VERSION"'"/' lib/lancelot/version.rb
       # ext-name (lancelot), gemspec (lancelot.gemspec) and platform-gem-env
       # (RUST_GEM_PLATFORM) all resolve to the workflow defaults, so omitted.
       # protoc is required by the `lance` crate's prost-build. On darwin install it
